@@ -12,7 +12,7 @@ Replace missing values with weighted moving average <br/>
 Box-cox transformation <br/>
 Construct ACF, PACF plot <br/>
 Run ADF and KPSS test <br/>
-Construct periodogram to study multi-seasonality
+Construct periodogram to study multi-seasonality <br/>
 Split data into train and test set
 
 ## Model Application
