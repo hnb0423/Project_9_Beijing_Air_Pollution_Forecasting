@@ -13,6 +13,7 @@ Box-cox transformation <br/>
 Construct ACF, PACF plot <br/>
 Run ADF and KPSS test <br/>
 Construct periodogram to study multi-seasonality
+Split data into train and test set
 
 ## Model Application
 ### Univariate Analysis
