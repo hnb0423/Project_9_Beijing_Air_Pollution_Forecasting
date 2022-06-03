@@ -1,0 +1,940 @@
+---
+title: "Time Series Final Project"
+author: "Naibo(Ray) Hu"
+date: "4/12/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(purrr)
+library(tidyr)
+library(scales)
+library(imputeTS)
+library(xts)
+library(fpp)
+library(fpp2)
+library(uroot)
+library(TSA)
+library(vars)
+```
+
+```{r}
+air <- read.csv("PRSA_data_2010.1.1-2014.12.31.csv")
+```
+
+# Data Processing
+```{r}
+# missing values by column 
+colSums(is.na(air))
+```
+
+```{r}
+# summary stat of missing values 
+statsNA(air$pm2.5)
+```
+
+```{r}
+# distribution of missing values 
+ggplot_na_distribution(air$pm2.5, shape_points =20, size_points = 0.1)
+# missing values are randomly distributed 
+```
+
+```{r}
+ggplot_na_intervals(air$pm2.5)
+```
+
+```{r}
+# most NAs are 1NA in a row
+ggplot_na_gapsize(air$pm2.5)
+```
+
+```{r}
+# convert air_imp dataset to a time series format
+time_index <- seq(from = as.POSIXct("2010-1-1 00:00:00"), 
+                  to = as.POSIXct("2014-12-31 23:00:00"), by = "hour")
+air_ts <-xts(air$pm2.5, order.by = time_index)
+```
+
+```{r}
+# hour data
+autoplot(air_ts)
+```
+
+### Data Undersample
+```{r}
+# week data & month data
+air_week <- apply.weekly(air_ts,mean,na.rm=T)
+air_month <- apply.monthly(air_ts,mean,na.rm=T)
+```
+
+```{r}
+anyNA(air_week)
+anyNA(air_month)
+```
+
+### Weekly Data
+```{r}
+autoplot(air_week)
+```
+
+```{r}
+tsdisplay(air_week, lag = 52*2)
+```
+
+
+### Monthly Data
+```{r}
+autoplot(air_month)
+```
+```{r}
+tsdisplay(air_month, lag = 12*3)
+```
+
+
+### Periodogram 
+```{r}
+par(mfrow = c(2,1))
+
+temp_week <- periodogram(air_week,log='no',plot=TRUE,ylab="Periodogram", xlab="Frequency",lwd=1.5)
+
+temp_month <- periodogram(air_month,log='no',plot=TRUE,ylab="Periodogram", xlab="Frequency",lwd=1.5)
+```
+
+```{r}
+temp_week$freq
+```
+```{r}
+temp_month$freq
+```
+
+### Spectrum analysis
+```{r}
+par(mfrow = c(2,1))
+spectrum(air_week, method = c("pgram", "ar"))
+spectrum(air_month, method = c("pgram", "ar"))
+```
+
+
+### KPSS test 
+```{r}
+kpss.test(air_week, lshort = TRUE)
+kpss.test(air_month, lshort = TRUE)
+```
+
+
+
+### ADF test
+```{r}
+adf.test(air_week)
+adf.test(air_month)
+```
+
+# Box-Cox Transformation
+```{r}
+# Box-Cox lambda for weekly data 
+bc_lambda_week <-BoxCox.lambda(air_week)
+bc_lambda_week
+```
+
+```{r}
+# Box-Cox Transformation for weekly data 
+air_week_bc <-BoxCox(air_week, lambda = bc_lambda_week)
+autoplot(air_week_bc)
+```
+```{r}
+tsdisplay(air_week_bc, lag = 104)
+```
+
+
+```{r}
+# Box-Cox lambda for monthly data 
+bc_lambda_month <-BoxCox.lambda(air_month)
+bc_lambda_month
+```
+
+```{r}
+# Box-Cox Transformation for monthly data 
+air_month_bc <-BoxCox(air_month, lambda = bc_lambda_month)
+autoplot(air_month_bc)
+```
+
+
+```{r}
+tsdisplay(air_month_bc, lag = 36)
+```
+
+```{r}
+# check normality of week data 
+par(mfrow = c(1,2))
+qqnorm(air_week,main=expression(Normal~~Q-Q~~Plot:weekly_air_data))
+qqline(air_week)
+qqnorm(air_week_bc,main=expression(Normal~~Q-Q~~Plot:weekly_air_data))
+qqline(air_week_bc)
+```
+
+
+```{r}
+par(mfrow = c(1,2))
+hist(air_week)
+hist(air_week_bc)
+```
+
+
+```{r}
+# check normality of month data 
+par(mfrow = c(1,2))
+qqnorm(air_month,main=expression(Normal~~Q-Q~~Plot_monthly_air_data))
+qqline(air_month)
+qqnorm(air_month_bc,main=expression(Normal~~Q-Q~~Plot_monthly_air_data))
+qqline(air_month_bc)
+```
+
+```{r}
+par(mfrow = c(1,2))
+hist(air_month)
+hist(air_month_bc)
+```
+
+
+
+# train test split
+### Weekly Data
+#### 0.8-0.2 split
+```{r}
+# train for weekly data 
+start_date <- "2010-01-03"
+end_date <- "2013-12-29"
+air_train_week <- air_week[paste(start_date, end_date, sep="/")]
+air_train_week_ts <- ts(air_train_week, start = c(2010,1), frequency = 52)
+
+# test for weekly data 
+start_date <- "2014-01-05"
+end_date <- "2014-12-31"
+air_test_week <- air_week[paste(start_date, end_date, sep="/")]
+air_test_week_ts <- ts(air_test_week, start = c(2014,1), frequency = 52)
+```
+
+```{r}
+length(air_week)
+length(air_train_week_ts)
+length(air_test_week_ts)
+```
+
+### Monthly Data
+#### 0.8-0.2 split
+```{r}
+# train for monthly data 
+start_date <- "2010-01"
+end_date <- "2013-12"
+air_train_month <- air_month[paste(start_date, end_date, sep="/")]
+air_train_month_ts <- ts(air_train_month, start = c(2010,1), frequency = 12)
+
+start_date <- "2014-01"
+end_date <- "2014-12"
+air_test_month <- air_month[paste(start_date, end_date, sep="/")]
+air_test_month_ts <- ts(air_test_month, start = c(2014, 1), frequency = 12)
+```
+
+```{r}
+length(air_month)
+length(air_train_month_ts)
+length(air_test_month_ts)
+```
+
+
+# Univariate Analysis
+## Simple TS models (naive, seasonal naive, mean, drift)
+#### Week Model 
+
+```{r}
+# Simple ts week model 
+# Naive, mean, seasonal naive, drift
+h<-53
+Model_SNaive <- snaive(air_train_week_ts, h)
+Model_Mean <- meanf(air_train_week_ts, h) 
+Model_Naive <- naive(air_train_week_ts, h) 
+Model_Drift <- rwf(air_train_week_ts, h, drift=TRUE)
+
+autoplot(air_train_week_ts) +
+  autolayer(Model_SNaive$mean, series="Seasonal naive") +
+  autolayer(Model_Mean$mean, series="Mean") +
+  autolayer(Model_Naive$mean, series="Naive") +
+  autolayer(Model_Drift$mean, series="Drift") +
+  autolayer(air_test_week_ts, series="Weekly Test Data", alpha = 0.3) +
+  ggtitle("Forecasts for Weekly PM 2.5") +
+  xlab("Time") + ylab("PM2.5 Index")
+
+autoplot(air_test_week_ts) +
+  autolayer(Model_SNaive$mean, series="Seasonal naive") +
+  autolayer(Model_Mean$mean, series="Mean") +
+  autolayer(Model_Naive$mean, series="Naive") +
+  autolayer(Model_Drift$mean, series="Drift") +
+  ggtitle("Forecasts for Weekly PM 2.5") +
+  xlab("Time") + ylab("PM2.5 Index")
+```
+```{r}
+summary(Model_SNaive)
+summary(Model_Mean)
+summary(Model_Naive)
+summary(Model_Drift)
+```
+
+```{r}
+accuracy(Model_SNaive$mean, air_test_week_ts)
+accuracy(Model_Mean$mean, air_test_week_ts)
+accuracy(Model_Naive$mean, air_test_week_ts)
+accuracy(Model_Drift$mean, air_test_week_ts)
+```
+
+```{r}
+checkresiduals(Model_SNaive$residuals)
+checkresiduals(Model_Mean$residuals)
+checkresiduals(Model_Naive$residuals)
+checkresiduals(Model_Drift$residuals)
+```
+
+```{r}
+# seasonal naive 
+qqnorm(Model_SNaive$residuals,main=expression(Normal~~Q-Q~~Plot_Seasonal_Naive_Model))
+qqline(Model_SNaive$residuals)
+
+# Mean 
+qqnorm(Model_Mean$residuals,main=expression(Normal~~Q-Q~~Plot_Mean_Model))
+qqline(Model_Mean$residuals)
+
+# naive
+qqnorm(Model_Naive$residuals,main=expression(Normal~~Q-Q~~Plot_Naive_Model))
+qqline(Model_Naive$residuals)
+
+# drift
+qqnorm(Model_Drift$residuals,main=expression(Normal~~Q-Q~~Plot_Drift_Model))
+qqline(Model_Drift$residuals)
+```
+```{r}
+#Ljung-Box test
+Box.test(Model_SNaive$residuals, type =  "Ljung-Box")
+Box.test(Model_Mean$residuals, type =  "Ljung-Box")
+Box.test(Model_Naive$residuals, type =  "Ljung-Box")
+Box.test(Model_Drift$residuals, type =  "Ljung-Box")
+```
+
+#### Month Model 
+```{r}
+# Simple ts month model 
+# Naive, mean, seasonal naive, drift
+h<-12
+Model_SNaive <- snaive(air_train_month_ts, h)
+Model_Mean <- meanf(air_train_month_ts, h) 
+Model_Naive <- naive(air_train_month_ts, h) 
+Model_Drift <- rwf(air_train_month_ts, h, drift=TRUE)
+
+autoplot(air_train_month_ts) +
+  autolayer(Model_SNaive$mean, series="Seasonal naive") +
+  autolayer(Model_Mean$mean, series="Mean") +
+  autolayer(Model_Naive$mean, series="Naive") +
+  autolayer(Model_Drift$mean, series="Drift") +
+  autolayer(air_test_month_ts, series="Monthly Test Data", alpha = 0.3)+
+  ggtitle("Forecasts for Monthly PM 2.5") +
+  xlab("Time") + ylab("PM2.5 Index")
+
+autoplot(air_test_month_ts) +
+  autolayer(Model_SNaive$mean, series="Seasonal naive") +
+  autolayer(Model_Mean$mean, series="Mean") +
+  autolayer(Model_Naive$mean, series="Naive") +
+  autolayer(Model_Drift$mean, series="Drift") +
+  ggtitle("Forecasts for Monthly PM 2.5") +
+  xlab("Time") + ylab("PM2.5 Index")
+```
+
+```{r}
+summary(Model_SNaive)
+summary(Model_Mean)
+summary(Model_Naive)
+summary(Model_Drift)
+```
+
+
+```{r}
+accuracy(Model_SNaive$mean, air_test_month_ts)
+accuracy(Model_Mean$mean, air_test_month_ts)
+accuracy(Model_Naive$mean, air_test_month_ts)
+accuracy(Model_Drift$mean, air_test_month_ts)
+```
+
+
+```{r}
+checkresiduals(Model_SNaive$residuals)
+checkresiduals(Model_Mean$residuals)
+checkresiduals(Model_Naive$residuals)
+checkresiduals(Model_Drift$residuals)
+```
+
+```{r}
+# seasonal naive 
+qqnorm(Model_SNaive$residuals,main=expression(Normal~~Q-Q~~Plot_Seasonal_Naive_Model))
+qqline(Model_SNaive$residuals)
+
+# Mean 
+qqnorm(Model_Mean$residuals,main=expression(Normal~~Q-Q~~Plot_Mean_Model))
+qqline(Model_Mean$residuals)
+
+# naive
+qqnorm(Model_Naive$residuals,main=expression(Normal~~Q-Q~~Plot_Naive_Model))
+qqline(Model_Naive$residuals)
+
+# drift
+qqnorm(Model_Drift$residuals,main=expression(Normal~~Q-Q~~Plot_Drift_Model))
+qqline(Model_Drift$residuals)
+```
+```{r}
+#Ljung-Box test
+Box.test(Model_SNaive$residuals, type =  "Ljung-Box")
+Box.test(Model_Mean$residuals, type =  "Ljung-Box")
+Box.test(Model_Naive$residuals, type =  "Ljung-Box")
+Box.test(Model_Drift$residuals, type =  "Ljung-Box")
+```
+
+
+## ARIMA 
+### ARIMA Week Model
+```{r}
+arima_001_001<- auto.arima(air_train_week_ts, D=1)
+summary(arima_001_001)
+```
+
+
+```{r}
+# forecast for 53 weeks
+forecast001_001<- forecast(arima_001_001, h = 53)
+accuracy(forecast001_001$mean, air_test_week_ts)
+```
+
+
+```{r}
+autoplot(forecast001_001)+ autolayer(air_test_week_ts, series = "weekly test data", alpha = 0.5 )
+```
+
+```{r}
+checkresiduals(arima_001_001$residuals)
+```
+```{r}
+# Most residuals are close to straight line
+qqnorm(arima_001_001$residuals,main=expression(Normal~~Q-Q~~Plot))
+qqline(arima_001_001$residuals)
+```
+
+```{r}
+#Ljung-Box test
+Box.test(arima_001_001$residuals, type =  "Ljung-Box")
+#p value is  greater than 0.05. So, we fail to reject null hypothesis, indicating that the data are independently distributed.
+```
+
+## ARIMA Monthly Model 
+```{r}
+arima_000<- auto.arima(air_train_month_ts, D=1)
+summary(arima_000)
+```
+```{r}
+# forecast for 12 month
+forecast_month<- forecast(arima_000, h = 12)
+accuracy(forecast_month$mean, air_test_month_ts)
+```
+```{r}
+autoplot(forecast_month)+ autolayer(air_test_month_ts, series = "monthly test data", alpha = 0.5 )
+```
+```{r}
+checkresiduals(arima_000$residuals)
+```
+```{r}
+# Most residuals are close to straight line
+qqnorm(arima_000$residuals,main=expression(Normal~~Q-Q~~Plot))
+qqline(arima_000$residuals)
+```
+```{r}
+#Ljung-Box test
+Box.test(arima_000$residuals, type =  "Ljung-Box")
+#p value is  greater than 0.05. So, we fail to reject null hypothesis, indicating that the data are independently distributed.
+```
+
+## Dynamic harmonic regression
+### Week Model
+```{r}
+bestfit_week <- list(aicc = Inf)
+for (i in 1:25)
+{
+hr_week <- auto.arima(air_train_week_ts, xreg = fourier(air_train_week_ts, K = i), seasonal = FALSE)
+if(hr_week$aicc < bestfit_week$aicc)
+  bestfit_week <- hr_week
+else break;
+}
+
+bestfit_week # best model has k = 1
+```
+
+```{r}
+harmonics <- fourier(air_train_week_ts, K = 1)
+hr_week <- auto.arima(air_train_week_ts, xreg = harmonics, seasonal = FALSE)
+summary(hr_week)
+```
+```{r}
+newharmonics <- fourier(air_train_week_ts, K = 1, h = 53)
+fc_week <- forecast(hr_week, xreg = newharmonics)
+autoplot(fc_week)+ autolayer(air_test_week_ts, alpha = 0.5, series = "Weekly test data")
+```
+```{r}
+accuracy(fc_week, air_test_week_ts)
+```
+
+```{r}
+checkresiduals(hr_week$residuals)
+```
+```{r}
+# Most residuals are close to straight line
+qqnorm(hr_week$residuals,main=expression(Normal~~Q-Q~~Plot))
+qqline(hr_week$residuals)
+```
+```{r}
+#Ljung-Box test
+Box.test(hr_week$residuals, type =  "Ljung-Box")
+#p value is  greater than 0.05. So, we fail to reject null hypothesis, indicating that the data are independently distributed.
+```
+
+### Month Model
+```{r}
+bestfit_month <- list(aicc = Inf)
+for (i in 1:6)
+{
+hr_month <- auto.arima(air_train_month_ts, xreg = fourier(air_train_month_ts, K = i), seasonal = FALSE)
+if(hr_month$aicc < bestfit_month$aicc)
+  bestfit_month <- hr_month
+else break;
+}
+
+bestfit_month # best model has k = 1
+```
+
+
+```{r}
+harmonics <- fourier(air_train_month_ts, K = 1)
+hr_month <- auto.arima(air_train_month_ts, xreg = harmonics, seasonal = FALSE)
+summary(hr_month)
+```
+```{r}
+newharmonics <- fourier(air_train_month_ts, K = 1, h = 12)
+fc_month <- forecast(hr_month, xreg = newharmonics)
+autoplot(fc_month)+ autolayer(air_test_month_ts, alpha = 0.5, series = "Monthly test data")
+```
+```{r}
+accuracy(fc_month, air_test_month_ts)
+```
+
+```{r}
+checkresiduals(hr_month$residuals)
+```
+```{r}
+# Most residuals are close to straight line
+qqnorm(hr_month$residuals,main=expression(Normal~~Q-Q~~Plot))
+qqline(hr_month$residuals)
+```
+```{r}
+#Ljung-Box test
+Box.test(hr_month$residuals, type =  "Ljung-Box")
+#p value is  greater than 0.05. So, we fail to reject null hypothesis, indicating that the data are independently distributed.
+```
+
+## TBATs model
+### Week Model
+```{r}
+tabats_week <- tbats(air_train_week_ts)
+tabats_week
+# boxcox parameter 0.092, weekly seasonality 52, k=3, no damping, no arma error
+```
+
+```{r}
+fc_tabats_week<-forecast(tabats_week,53)
+autoplot(fc_tabats_week)+autolayer(air_test_week_ts, alpha = 0.5, series ="weekly test data")
+```
+```{r}
+accuracy(fc_tabats_week, air_test_week_ts)
+```
+
+```{r}
+checkresiduals(tabats_week)
+```
+
+```{r}
+# Most residuals are close to straight line
+qqnorm(tabats_week$errors,main=expression(Normal~~Q-Q~~Plot))
+qqline(tabats_week$errors)
+```
+```{r}
+#Ljung-Box test
+Box.test(tabats_week$errors, type =  "Ljung-Box")
+#p value is  greater than 0.05. So, we fail to reject null hypothesis, indicating that the data are independently distributed.
+```
+
+### Month Model
+```{r}
+tabats_month <- tbats(air_train_month_ts)
+tabats_month
+# boxcox parameter 0.131, no seasonality 52, no k, no damping, no arma error
+```
+
+```{r}
+fc_tabats_month<-forecast(tabats_month,12)
+autoplot(fc_tabats_month)+autolayer(air_test_month_ts, alpha = 0.5, series ="Monthly test data")
+```
+```{r}
+accuracy(fc_tabats_month, air_test_month_ts)
+```
+
+```{r}
+checkresiduals(tabats_month)
+```
+
+```{r}
+# Most residuals are close to straight line
+qqnorm(tabats_month$errors,main=expression(Normal~~Q-Q~~Plot))
+qqline(tabats_month$errors)
+```
+```{r}
+#Ljung-Box test
+Box.test(tabats_month$errors, type =  "Ljung-Box")
+#p value is  greater than 0.05. So, we fail to reject null hypothesis, indicating that the data are independently distributed.
+```
+
+# Multivariate analysis
+## Regression with ARMA Errors
+### Data Preparation 
+```{r}
+# extract numeric columns
+air_sub <-subset(air, select = c(DEWP, TEMP, Iws,Is,Ir))
+anyNA(air_sub)
+```
+```{r}
+time_index <- seq(from = as.POSIXct("2010-1-1 00:00:00"), 
+                  to = as.POSIXct("2014-12-31 23:00:00"), by = "hour")
+air_ts_sub <-xts(air_sub, order.by = time_index)
+```
+
+
+```{r}
+# data undersample
+# week data
+air_week_sub <- apply.weekly(air_ts_sub, mean, na.rm=TRUE) # week data 
+air_week_sub$pm2.5 <- air_week
+# month data 
+air_month_sub <- apply.monthly(air_ts_sub,mean,na.rm=TRUE) # month data 
+air_month_sub$pm2.5 <- air_month
+```
+
+```{r}
+anyNA(air_week_sub)
+anyNA(air_month_sub)
+```
+
+
+## Arima with error Week Model 
+```{r}
+# All variables have seasoanlity at lag 52, thus need for seasoanl differencing 
+tsdisplay(air_week_sub$DEWP, lag = 52*3)
+tsdisplay(air_week_sub$TEMP, lag = 52*3)
+tsdisplay(air_week_sub$Iws, lag = 52*3)# Cumulated wind speed 
+tsdisplay(air_week_sub$Is, lag = 52*3)# Cumulated hours of snow
+tsdisplay(air_week_sub$Ir, lag = 52*3)#Cumulated hours of rain
+```
+```{r}
+# seasonal differencing D=1
+dewp_diff_w <- diff(air_week_sub$DEWP, lag = 52)
+temp_diff_w <- diff(air_week_sub$TEMP, lag = 52)
+Iws_diff_w <- diff(air_week_sub$Iws, lag = 52)
+Is_diff_w <- diff(air_week_sub$Is, lag = 52)
+Ir_diff_w <- diff(air_week_sub$Ir, lag = 52)
+tsdisplay(dewp_diff_w, lag = 52*3)
+tsdisplay(temp_diff_w, lag = 52*3)
+tsdisplay(Iws_diff_w, lag = 52*3)
+tsdisplay(Is_diff_w, lag = 52*3)
+tsdisplay(Ir_diff_w, lag = 52*3)
+```
+
+#### 0.8-0.2 train test split 
+```{r}
+# train for weekly data 
+start_date <- "2010-01-03"
+end_date <- "2013-12-29"
+air_train_week_sub <- air_week_sub[paste(start_date, end_date, sep="/")]
+air_train_week_ts_sub <- ts(air_train_week_sub, start = c(2010,1), frequency = 52)
+
+# test for weekly data 
+start_date <- "2014-01-05"
+end_date <- "2014-12-31"
+air_test_week_sub <- air_week_sub[paste(start_date, end_date, sep="/")]
+air_test_week_ts_sub <- ts(air_test_week_sub, start = c(2014,1), frequency = 52)
+```
+
+### Model Application (ARIMA with error)
+```{r}
+x_reg <-cbind(dewpoint = air_train_week_ts_sub[,"DEWP"], temperature = air_train_week_ts_sub[,"TEMP"], windspeed = air_train_week_ts_sub[,"Iws"], snow = air_train_week_ts_sub[,"Is"], rain = air_train_week_ts_sub[,"Ir"])
+arima_error_week <- auto.arima(air_train_week_ts_sub[,"pm2.5"], xreg = x_reg, D=1) 
+# no Box-cox transformation generates better forecast performance 
+summary(arima_error_week)
+```
+```{r}
+checkresiduals(arima_error_week)
+# The model has some significant autocorrelation in the residuals
+```
+
+```{r}
+#Ljung-Box test
+Box.test(arima_error_week$residuals, type =  "Ljung-Box")
+# p value not significant, fail to reject null hypothesis. The data are independently distributed and does not exhibit serial correlation
+```
+
+
+
+```{r}
+# Most residuals are close to straight line
+qqnorm(arima_error_week$residuals,main=expression(Normal~~Q-Q~~Plot))
+qqline(arima_error_week$residuals)
+```
+
+```{r}
+x_reg_test <-cbind(dewpoint = air_test_week_ts_sub[,"DEWP"], temperature = air_test_week_ts_sub[,"TEMP"], windspeed = air_test_week_ts_sub[,"Iws"], snow = air_test_week_ts_sub[,"Is"], rain = air_test_week_ts_sub[,"Ir"])
+
+forecast_arima_error_week <- forecast(arima_error_week, xreg = x_reg_test)
+forecast_arima_error_week
+```
+
+```{r}
+autoplot(forecast_arima_error_week)+ autolayer(air_test_week_ts_sub[,"pm2.5"], series = "weekly test data", alpha = 0.5 )
+```
+
+```{r}
+accuracy(forecast_arima_error_week, air_test_week_ts_sub[,"pm2.5"])
+```
+## ARIMA with error Month Model 
+```{r}
+# All variables have seasoanlity at lag 12, thus need for seasoanl differencing 
+tsdisplay(air_month_sub$DEWP, lag = 12*3)
+tsdisplay(air_month_sub$TEMP, lag = 12*3)
+tsdisplay(air_month_sub$Iws, lag = 12*3)# Cumulated wind speed 
+tsdisplay(air_month_sub$Is, lag = 12*3)# Cumulated hours of snow
+tsdisplay(air_month_sub$Ir, lag = 12*3)#Cumulated hours of rain
+```
+
+```{r}
+# seasonal differencing D=1
+dewp_diff_m <- diff(air_month_sub$DEWP, lag = 12)
+temp_diff_m <- diff(air_month_sub$TEMP, lag = 12)
+Iws_diff_m <- diff(air_month_sub$Iws, lag = 12)
+Is_diff_m <- diff(air_month_sub$Is, lag = 12)
+Ir_diff_m <- diff(air_month_sub$Ir, lag = 12)
+tsdisplay(dewp_diff_m, lag = 12*3)
+tsdisplay(temp_diff_m, lag = 12*3)
+tsdisplay(Iws_diff_m, lag = 12*3)
+tsdisplay(Is_diff_m, lag = 12*3)
+tsdisplay(Ir_diff_m, lag = 12*3)
+```
+
+#### 0.8-0.2 train test split 
+```{r}
+# train for monthly data 
+start_date <- "2010-01"
+end_date <- "2013-12"
+air_train_month_sub <- air_month_sub[paste(start_date, end_date, sep="/")]
+air_train_month_ts_sub <- ts(air_train_month_sub, start = c(2010,1), frequency = 12)
+
+# test for monthly data 
+start_date <- "2014-01"
+end_date <- "2014-12"
+air_test_month_sub <- air_month_sub[paste(start_date, end_date, sep="/")]
+air_test_month_ts_sub <- ts(air_test_month_sub, start = c(2014,1), frequency = 12)
+```
+
+### Model Application (ARMA with error)
+```{r}
+x_reg <-cbind(dewpoint = air_train_month_ts_sub[,"DEWP"], temperature = air_train_month_ts_sub[,"TEMP"], windspeed = air_train_month_ts_sub[,"Iws"], snow = air_train_month_ts_sub[,"Is"], rain = air_train_month_ts_sub[,"Ir"])
+arima_error_month <- auto.arima(air_train_month_ts_sub[,"pm2.5"], xreg = x_reg, D=1) 
+# no Box-cox transformation generates better forecast performance 
+summary(arima_error_month)
+```
+```{r}
+checkresiduals(arima_error_month)
+# The model has some significant autocorrelation in the residuals
+```
+
+```{r}
+#Ljung-Box test
+Box.test(arima_error_month$residuals, type =  "Ljung-Box")
+# p value not significant, fail to reject null hypothesis. The data are independently distributed and does not exhibit serial correlation
+```
+```{r}
+# Most residuals are close to straight line
+qqnorm(arima_error_month$residuals,main=expression(Normal~~Q-Q~~Plot))
+qqline(arima_error_month$residuals)
+```
+
+```{r}
+x_reg_test <-cbind(dewpoint = air_test_month_ts_sub[,"DEWP"], temperature = air_test_month_ts_sub[,"TEMP"], windspeed = air_test_month_ts_sub[,"Iws"], snow = air_test_month_ts_sub[,"Is"], rain = air_test_month_ts_sub[,"Ir"])
+
+forecast_arima_error_month <- forecast(arima_error_month, xreg = x_reg_test)
+forecast_arima_error_month
+```
+
+```{r}
+autoplot(forecast_arima_error_month)+ autolayer(air_test_month_ts_sub[,"pm2.5"], series = "monthly test data", alpha = 0.5)
+```
+
+```{r}
+accuracy(forecast_arima_error_month, air_test_month_ts_sub[,"pm2.5"])
+```
+
+## Vector Autoregressions (VAR)
+### VAR Week Model 
+```{r}
+VARselect(air_train_week_ts_sub, lag.max = 10, type = "const")$selection
+```
+
+```{r}
+## Choose var based on AIC
+var6<-VAR(air_train_week_ts_sub, p=6,type = "const", season = 52)
+serial.test(var6, lags.pt = 10, type = "PT.asymptotic")
+```
+
+```{r}
+## Choose var1 based on BIC 
+var1<-VAR(air_train_week_ts_sub, p=1,type = "const", season = 52)
+#summary(var1)
+serial.test(var1, lags.pt = 10, type = "PT.asymptotic")
+```
+Both var 6 and var 1 have p-values less than 0.05. Thus, null hypothesis of no serial correlation in the residuals is rejected. Choose the simplest model: var(1)
+
+
+```{r}
+summary(var1)
+```
+```{r}
+## Check residual
+Acf(residuals(var1))
+```
+
+```{r}
+par(mfrow=c(3,2))
+acf(resid(var1)[, 1])
+acf(resid(var1)[, 2])
+acf(resid(var1)[, 3])
+acf(resid(var1)[, 4])
+acf(resid(var1)[, 5])
+acf(resid(var1)[, 6])
+```
+
+
+```{r}
+var1.pred <- forecast(var1, h=53)
+accuracy(var1.pred$forecast[[6]], air_test_week_ts_sub[,'pm2.5'])
+```
+
+```{r}
+autoplot(var1.pred$forecast[[6]])+ autolayer(air_test_week_ts_sub[,"pm2.5"], series = "weekly test data", alpha = 0.5 )
+```
+
+```{r}
+Box.test(var1.pred$forecast[[6]]$residuals, type =  "Ljung-Box")
+```
+
+### VAR Month Model
+```{r}
+VARselect(air_train_month_ts_sub, lag.max = 10, type = "const")$selection
+```
+
+```{r}
+varm_1<-VAR(air_train_month_ts_sub, p=1,type = "const", season = 12)
+serial.test(varm_1, lags.pt = 10, type = "PT.asymptotic")
+
+#### When p = 7, code doesn't work. Try p=1 (simplest model).
+```
+
+```{r}
+summary(varm_1)
+```
+
+
+```{r}
+varm_1.pred <- forecast(varm_1, h=12)
+accuracy(varm_1.pred$forecast[[6]], air_test_month_ts_sub[,'pm2.5'])
+```
+
+```{r}
+autoplot(varm_1.pred$forecast[[6]])+ autolayer(air_test_month_ts_sub[,"pm2.5"], series = "monthly test data", alpha = 0.5 )
+```
+
+```{r}
+## Check residual
+Acf(residuals(varm_1))
+```
+
+```{r}
+par(mfrow=c(3,2))
+acf(resid(varm_1)[, 1])
+acf(resid(varm_1)[, 2])
+acf(resid(varm_1)[, 3])
+acf(resid(varm_1)[, 4])
+acf(resid(varm_1)[, 5])
+acf(resid(varm_1)[, 6])
+```
+
+
+# Other EDA
+```{r}
+air_drop_na <- na.omit(air)
+anyNA(air_drop_na)
+```
+
+```{r}
+# distribution of all numeric variables 
+air_drop_na %>%
+  keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+    facet_wrap(~ key, scales = "free") +
+    geom_histogram()
+```
+
+
+```{r}
+# pm2.5 in month
+ggplot(air_drop_na, aes(group=month, y=pm2.5)) + geom_boxplot()
+```
+
+```{r}
+# correlation matrix
+library(corrplot)
+my_data <- air_drop_na[, c(6,7,8,9,11,12,13)]
+res <- cor(my_data)
+corrplot(res, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45)
+```
+
+```{r}
+# pm2.5 vs temperature
+plot(air_drop_na$TEMP,air_drop_na$pm2.5,)
+```
+
+```{r}
+# pm2.5 vs DEWP
+ggplot() +
+  geom_line(data = air_drop_na, mapping=aes(x=DEWP,y=pm2.5), color="black")+
+  geom_point(data = air_drop_na, mapping=aes(x=DEWP,y=pm2.5), color="red")
+```
+
+```{r}
+# pm2.5 vs PRES
+ggplot() +
+  geom_line(data = air_drop_na, mapping=aes(x=PRES,y=pm2.5), color="black")+
+  geom_point(data = air_drop_na, mapping=aes(x=PRES,y=pm2.5), color="red")
+```
+
+
+
