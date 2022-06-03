@@ -6,7 +6,7 @@ The goal of this project is to utilize time series forecasting to predict level 
 ## Data
 UCI: https://archive.ics.uci.edu/ml/datasets/Beijing+PM2.5+Data
 
-## Data processing 
+## Data processing & EDA
 Undersample hourly data to weekly and monthly data <br/>
 Replace missing values with weighted moving average <br/>
 Box-cox transformation <br/>
