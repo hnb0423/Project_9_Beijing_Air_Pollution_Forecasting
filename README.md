@@ -7,21 +7,21 @@ The goal of this project is to utilize time series forecasting to predict level 
 UCI: https://archive.ics.uci.edu/ml/datasets/Beijing+PM2.5+Data
 
 ## Data processing 
-Undersample hourly data to weekly and monthly data 
-Replace missing values with weighted moving average
-Box-cox transformation
-Construct ACF, PACF plot 
-Run ADF and KPSS test
+Undersample hourly data to weekly and monthly data <br/>
+Replace missing values with weighted moving average <br/>
+Box-cox transformation <br/>
+Construct ACF, PACF plot <br/>
+Run ADF and KPSS test <br/>
 Construct periodogram to study multi-seasonality
 
 ## Model Application
 ### Univariate Analysis
-Simple time series models: naive, seasonal naive, drift, mean models
-SARIMA model
-Dynamic hamornic regression
+Simple time series models: naive, seasonal naive, drift, mean models <br/>
+SARIMA model <br/>
+Dynamic hamornic regression <br/>
 TBATs model
 
 ### Multivariate Analysis
-Regression with ARMA error
+Regression with ARMA error<br/>
 VAR model 
 
